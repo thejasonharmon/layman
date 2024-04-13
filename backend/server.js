@@ -16,24 +16,29 @@ const db = new sqlite3.Database('./layman.db', (err) => {
   console.log('Connected to the SQlite database.');
 });
 
-// Initialize DB with tables if they don't exist
-// db.run(`CREATE TABLE IF NOT EXISTS sessions (
-//   state_id INTEGER,
-//   session_id INTEGER PRIMARY KEY,
-//   year_start INTEGER,
-//   year_end INTEGER,
-//   prefile INTEGER,
-//   sine_die INTEGER,
-//   prior INTEGER,
-//   special INTEGER,
-//   session_tag TEXT,
-//   session_title TEXT,
-//   session_name TEXT,
-//   dataset_date TEXT,
-//   dataset_hash TEXT,
-//   dataset_size INTEGER,
-//   access_key TEXT
-// )`);
+db.run(`
+CREATE TABLE IF NOT EXISTS bills (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  year INTEGER,
+  label TEXT,
+  json TEXT
+);`);
+
+db.run(`
+CREATE TABLE IF NOT EXISTS people (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  year INTEGER,
+  label TEXT,
+  json TEXT
+);`);
+
+db.run(`
+CREATE TABLE IF NOT EXISTS votes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  year INTEGER,
+  label TEXT,
+  json TEXT
+);`);
 
 app.get('/refreshData', async (req, res) => {
   try {
