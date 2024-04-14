@@ -1,26 +1,39 @@
 import React, { useState } from 'react';
-import { Container, AppBar, Tabs, Tab, Toolbar, Button, Box, Typography, CssBaseline, ThemeProvider, createTheme } from '@mui/material';
-import LegiScan from './LegiScan'; // Adjust if your export method is different
+import { Container, AppBar, Tabs, Tab, Toolbar, Button, Box, Typography, CssBaseline, ThemeProvider, createTheme} from '@mui/material';
+import CustomSnackbar from './components/Snackbar';
+//import LegiScan from './LegiScan'; // Adjust if your export method is different
 
 function App() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [value, setValue] = useState(0);
+  const [tempMessage,setTempMessage] = useState(null);
 
-  const legiScanService = new LegiScan(process.env.REACT_APP_LEGISCAN_API_KEY);
+  //const legiScanService = new LegiScan(process.env.REACT_APP_LEGISCAN_API_KEY);
 
-  const fetchDataFromLegiScan = async () => {
+  const refreshData = async () => {
     setLoading(true);
     setError(null);
+    setData('Loading data...')
+    setTempMessage('Loading data...');
     try {
-      await legiScanService.getSessionList('UT', setData, setLoading, setError);
+      //await legiScanService.getSessionList('UT', setData, setLoading, setError);
+      const response = await fetch('http://localhost:3001/refreshData');
+      const jsonData = await response.json();
+      setData(jsonData);
+      setLoading(false);
     } catch (error) {
       console.error('There was a problem with the fetch operation:', error);
       setError(error.message);
+      setTempMessage('Error loading data.');
       setLoading(false);
     }
   };
+
+  const clearTempMessage = () => {
+    setTempMessage(null);
+  }
 
   const handleChange = (event, newValue) => {
     setValue(newValue);
@@ -53,7 +66,7 @@ function App() {
               <Tab label="Vetoed" />
             </Tabs>
             <Tab label="Search" /> {/* Additional Tab for Search to the right */}
-            <Button color="inherit" onClick={fetchDataFromLegiScan} disabled={loading}>
+            <Button color="inherit" onClick={refreshData} disabled={loading}>
               {loading ? 'Loading...' : 'Refresh Data'}
             </Button>
           </Toolbar>
@@ -75,6 +88,7 @@ function App() {
             'No data fetched yet'
           )}
         </Box>
+        <CustomSnackbar open={tempMessage?true:false} message={tempMessage} onClose={clearTempMessage}></CustomSnackbar>
       </Container>
     </ThemeProvider>
   );
