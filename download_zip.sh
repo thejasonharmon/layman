@@ -1,0 +1,1 @@
+curl --location 'https://api.legiscan.com/?key=946f94a16b47fed37727329a1b2d0994&id=2050&access_key=CwORn5NunEJUBSrFhXXT7&op=getDataSet' | jq -r '.dataset.zip' | base64 -d > legiscan.data
