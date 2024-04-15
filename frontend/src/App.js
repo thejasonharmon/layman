@@ -91,9 +91,14 @@ function App() {
   };
 
   const testError = () => {
-    setDetailedStatus(null);
-    setErrorJson({message:'This is a test error message from testError',error:'The error details would go here'});
-    setBottomBarText('Error. Expand for details');
+    if (!errorJson) {
+      setDetailedStatus(null);
+      setErrorJson({ message: 'This is a test error message from testError', error: 'The error details would go here' });
+      setBottomBarText('Error. Expand for details');
+    } else {
+      setErrorJson(null);
+      setBottomBarText('Last data refresh: ' + lastUpdateDate.current)
+    }
   }
 
   const darkTheme = createTheme({
@@ -132,7 +137,7 @@ function App() {
           </Toolbar>
         </AppBar>
         <br></br>
-        <Button onClick={testError}>Test Error</Button>
+        <Button variant='contained' onClick={testError}>{errorJson ? 'Clear Error' : 'Test Error'}</Button>
         <Snackbar anchorOrigin={{ horizontal: 'center', vertical: 'bottom' }} open={open} autoHideDuration={6000} onClose={handleClose}>
           <div>
             <Alert onClose={handleClose} severity={severity}>
@@ -153,14 +158,14 @@ function App() {
           <Typography variant='caption'>{bottomBarText}</Typography>
         </AccordionSummary>
         <AccordionDetails>
-          <Typography variant='caption' display={errorJson?"block":"none"}>
+          <Typography variant='caption' display={errorJson ? "block" : "none"}>
             💩 Error details:
           </Typography>
-          <Typography variant="caption" component="pre" sx={{color:"red"}} display={errorJson?"block":"none"}>
-            {errorJson?JSON.stringify(errorJson, null, 2):''}
+          <Typography variant="caption" component="pre" sx={{ color: "red" }} display={errorJson ? "block" : "none"}>
+            {errorJson ? JSON.stringify(errorJson, null, 2) : ''}
           </Typography>
-          <Typography variant='caption' display={(errorJson===null || errorJson==='')?"block":"none"}>
-              {detailedStatus?{detailedStatus}:'No status details 👍'}
+          <Typography variant='caption' display={(errorJson === null || errorJson === '') ? "block" : "none"}>
+            {detailedStatus ? { detailedStatus } : 'No status details 👍'}
           </Typography>
         </AccordionDetails>
       </Accordion>
