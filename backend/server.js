@@ -3,87 +3,249 @@ const cors = require('cors');
 const axios = require('axios');
 const sqlite3 = require('sqlite3').verbose();
 const dotenv = require('dotenv');
-const unzipper = require('unzipper');
-const { promisify } = require('util');
+const base64 = require('base-64');
+const fs = require('fs');
+const admZip = require('adm-zip');
+const os = require('os');
+const path = require('path');
+
+
+const LegiScan = require('./LegiScan');
 
 dotenv.config();
 const app = express();
 app.use(cors());
 app.use(express.json());
+const apiKey = process.env.API_KEY;
+const legiScan = new LegiScan(apiKey);
 
-const db = new sqlite3.Database('./layman.db', (err) => {
+const db = new sqlite3.Database('../layman.db', (err) => {
   if (err) {
-    console.error(err.message);
-    throw err;
+    return console.error(err.message);
   }
-  console.log('Connected to the SQLite database.');
+  console.log('Connected to the SQlite database.');
 });
 
-// Create tables if they do not exist
-const createTableQueries = [
-  `CREATE TABLE IF NOT EXISTS bill (id INTEGER PRIMARY KEY AUTOINCREMENT, year INTEGER, label TEXT, json TEXT);`,
-  `CREATE TABLE IF NOT EXISTS people (id INTEGER PRIMARY KEY AUTOINCREMENT, year INTEGER, label TEXT, json TEXT);`,
-  `CREATE TABLE IF NOT EXISTS vote (id INTEGER PRIMARY KEY AUTOINCREMENT, year INTEGER, label TEXT, json TEXT);`
-];
-createTableQueries.forEach(query => db.run(query));
+function runSql(sql, params = []) {
+  return new Promise((resolve, reject) => {
+      db.run(sql, params, function (err) {
+          if (err) {
+              reject(err);
+          } else {
+              resolve(this);
+          }
+      });
+  });
+}
 
-const dbRun = promisify(db.run.bind(db));
+function retrieveRow(sql, params = []) {
+  return new Promise((resolve, reject) => {
+      db.get(sql, params, function (err, row) {
+          if (err) {
+              reject(err);
+          } else {
+              resolve(row);
+          }
+      });
+  });
+}
 
-async function insertIntoTable(tableName, jsonData) {
-  // Check if tableName is valid to prevent SQL injection
-  if (!['bill', 'people', 'vote'].includes(tableName)) {
-    console.error(`Error: Invalid table name '${tableName}'`);
-    return; // Exit if table name is not valid
-  }
+runSql(`
+CREATE TABLE IF NOT EXISTS bills (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  year INTEGER,
+  label TEXT,
+  json TEXT
+);`);
 
-  // Construct the SQL insert statement
-  const sql = `INSERT INTO ${tableName} (json) VALUES (?)`;
-  const values = [JSON.stringify(jsonData)]; // Ensure the data is a string in JSON format
+runSql(`
+CREATE TABLE IF NOT EXISTS people (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  year INTEGER,
+  label TEXT,
+  json TEXT
+);`);
 
-  // Execute the SQL statement
+runSql(`
+CREATE TABLE IF NOT EXISTS votes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  year INTEGER,
+  label TEXT,
+  json TEXT
+);`);
+
+runSql(`
+CREATE TABLE IF NOT EXISTS config (
+  name TEXT,
+  value TEXT
+)
+`)
+
+let lastUpdatedDate;
+
+app.get('/getSessionList/state/:state', async (req, res) => {
   try {
-    const dbRun = promisify(db.run.bind(db));
-    await dbRun(sql, values);
-    console.log(`Data inserted successfully into ${tableName}.`);
+    const sessionList = await legiScan.getSessionList(req.params.state);
+    res.status(200).send(sessionList);
+  } catch (error) {
+    console.error('Server.legiScan:err Error fetching data:', error);
+    res.status(500).send('Failed to fetch data');
+  }
+});
+
+async function pullExtractZip(extractionDir) {
+  try {
+    const datasetList = await legiScan.getDataSetList('UT','2024');
+    const dataset = datasetList.datasetlist.filter(item => item.session_title === "2024 Regular Session");
+    const accessKey = dataset[0].access_key;
+    const session_id = dataset[0].session_id;
+    const jsonData = await legiScan.getDataSet(session_id, accessKey);
+
+    // Decode base64-encoded dataset.zip content
+    const datasetZipBuffer = Buffer.from(jsonData.dataset.zip, 'base64');
+
+    // Create a directory to extract the zip contents (optional)
+    // const extractionDir = os.tmpdir() + "/extracted";
+    console.log(`Writing files to ${extractionDir}`)
+    if (!fs.existsSync(extractionDir)) {
+      fs.mkdirSync(extractionDir);
+    }
+
+    // Use adm-zip to extract the zip file content
+    const zip = new admZip(datasetZipBuffer);
+    zip.extractAllTo(extractionDir, /*overwrite*/ true);
   } catch (err) {
-    console.error(`Error inserting data into ${tableName}:`, err);
+    throw new Error("pullZip: error ", err);
   }
 }
 
-app.post('/populateData', async (req, res) => {
+async function purgeTable(tableName) {
   try {
-    const response = await axios({
-      method: 'GET',
-      url: `https://api.legiscan.com/?key=${process.env.LEGISCAN_API_KEY}&access_key=${process.env.ACCESS_KEY}&id=${process.env.SESSION_ID}&op=getDataSet`,
-      responseType: 'json'
-    });
+    const result = await runSql(`DELETE FROM ${tableName};`);
+    console.log(`Purged ${result.changes} records from ${tableName} table`);
+  } catch (err) {
+    throw new Error('Failed to purge table', err);
+  }
+}
 
-    if (response.data.status === 'OK' && response.data.dataset.zip) {
-      const zipData = Buffer.from(response.data.dataset.zip, 'base64');
-      const directory = await unzipper.Open.buffer(zipData);
-      const processingPromises = [];
-      const fileRegex = /^UT\/2024-2024_General_Session\/(bill|people|vote)\/.+.json$/;
+async function insertRow(tableName, label, json) {
+  try {
+    const sql = `INSERT INTO ${tableName} (year,label,json) VALUES (?,?,?)`;
+    const result = await runSql(sql, ['2024', label, json]);
+    return result;
+    // console.log(`insert result`, result)
+  } catch (err) {
+    throw new Error('Failed to insert row', err);
+  }
+}
 
-      for (const entry of directory.files) {
-        if (fileRegex.test(entry.path)) {
-          processingPromises.push(entry.buffer().then(content => {
-            const tableName = entry.path.split('/')[2];
-            const json = JSON.parse(content.toString());
-            return insertIntoTable(tableName, json);
-          }).catch(err => {
-            console.error(`Failed to process file ${entry.path}:`, err);
-          }));
-        }
+async function readDir(folderName) {
+  return new Promise((resolve, reject) => {
+    fs.readdir(folderName, (err, files) => {
+      if (err) {
+        reject(err);
+      } else {
+        resolve(files);
       }
+    });
+  });
+}
 
-      await Promise.all(processingPromises);
-      res.status(200).json({ message: 'Data populated successfully' });
+async function readFile(filePath) {
+  try {
+    // Read file asynchronously
+    const data = await fs.promises.readFile(filePath, { encoding: 'utf8' });
+    return data;
+  } catch (err) {
+    // An error occurred while reading the file, throw the error
+    throw err;
+  }
+}
+
+async function insertRows(folderName, filesList, tableName) {
+  try {
+    // Iterate over each file in the list
+    let rowCount = 0;
+    for (let file of filesList) {
+      const filePath = path.join(folderName, file);
+      const data = await readFile(filePath);
+
+      // Process data and insert row
+      const label = file.substring(0, file.indexOf('.'));
+      //const json = JSON.parse(data);
+      const result = await insertRow(tableName, label, data);
+      if (result.changes>0) rowCount++;
+    }
+    console.log(`Inserted ${rowCount} rows into the ${tableName}`);
+    return rowCount;
+  } catch (err) {
+    console.error('Error inserting records:', err);
+    throw err; // Propagate error to caller
+  }
+}
+
+async function populateTable(folderName, tableName) {
+  try {
+
+    await purgeTable(tableName);
+
+    const files = await readDir(folderName);
+    const rows = await insertRows(folderName, files, tableName);
+  } catch (err) {
+    debugger;
+    throw new Error('populatTable:err ', err);
+  }
+}
+
+app.get('/refreshData', async (req, res) => {
+  try {
+
+    const extractionDir = "../extracted";
+    await pullExtractZip(extractionDir);
+
+    await populateTable(extractionDir + "/UT/2024-2024_General_Session/bill", 'bills');
+    await populateTable(extractionDir + "/UT/2024-2024_General_Session/people", 'people');
+    await populateTable(extractionDir + "/UT/2024-2024_General_Session/vote", 'votes');
+
+    const lastUpdatedDateRecord = await retrieveRow("SELECT value FROM config WHERE name='last_updated_date'");
+    if (lastUpdatedDateRecord) runSql("UPDATE config SET value = datetime('now', 'localtime') WHERE name = 'last_updated_date'");
+    else runSql("INSERT INTO config (name,value) VALUES (?,datetime('now','localtime'))",['last_updated_date']);
+    lastUpdatedDate = lastUpdatedDateRecord.value;
+
+    res.json({ message: lastUpdatedDate });
+  } catch (error) {
+    console.error('Error fetching data:', error);
+    res.status(500).json({message: 'Failed to fetch data', error: error.message});
+  }
+});
+
+app.get('/last-updated', async (req,res) => {
+  try {
+    if (lastUpdatedDate) {
+      res.json({message:lastUpdatedDate});
+      return;
+    }
+    const lastUpdatedDateRecord = await retrieveRow("SELECT value FROM config WHERE name='last_updated_date'");
+    if (lastUpdatedDateRecord) {
+      lastUpdatedDate = lastUpdatedDateRecord.value;
+      res.json({message:lastUpdatedDate});
     } else {
-      throw new Error('Invalid dataset response from API');
+      res.json({message:'Never'});
     }
   } catch (error) {
-    console.error('Failed to fetch or process data', error);
-    res.status(500).json({ message: 'Failed to process data', error: error.message });
+    console.error('Error occurred', error);
+    res.status(500).send('Internal server error');
+  }
+});
+
+app.post('/extract-zip', async (req, res) => {
+  try {
+    const { dataset } = req.body;
+
+
+  } catch (error) {
+    console.error('Error occurred', error);
+    res.status(500).send('Internal server error');
   }
 });
 
