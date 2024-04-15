@@ -26,7 +26,31 @@ const db = new sqlite3.Database('../layman.db', (err) => {
   console.log('Connected to the SQlite database.');
 });
 
-db.run(`
+function runSql(sql, params = []) {
+  return new Promise((resolve, reject) => {
+      db.run(sql, params, function (err) {
+          if (err) {
+              reject(err);
+          } else {
+              resolve(this);
+          }
+      });
+  });
+}
+
+function retrieveRow(sql, params = []) {
+  return new Promise((resolve, reject) => {
+      db.get(sql, params, function (err, row) {
+          if (err) {
+              reject(err);
+          } else {
+              resolve(row);
+          }
+      });
+  });
+}
+
+runSql(`
 CREATE TABLE IF NOT EXISTS bills (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   year INTEGER,
@@ -34,7 +58,7 @@ CREATE TABLE IF NOT EXISTS bills (
   json TEXT
 );`);
 
-db.run(`
+runSql(`
 CREATE TABLE IF NOT EXISTS people (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   year INTEGER,
@@ -42,13 +66,22 @@ CREATE TABLE IF NOT EXISTS people (
   json TEXT
 );`);
 
-db.run(`
+runSql(`
 CREATE TABLE IF NOT EXISTS votes (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   year INTEGER,
   label TEXT,
   json TEXT
 );`);
+
+runSql(`
+CREATE TABLE IF NOT EXISTS config (
+  name TEXT,
+  value TEXT
+)
+`)
+
+let lastUpdatedDate;
 
 app.get('/getSessionList/state/:state', async (req, res) => {
   try {
@@ -62,7 +95,11 @@ app.get('/getSessionList/state/:state', async (req, res) => {
 
 async function pullExtractZip(extractionDir) {
   try {
-    const jsonData = await legiScan.getDataSet(2050, 'CwORn5NunEJUBSrFhXXT7');
+    const datasetList = await legiScan.getDataSetList('UT','2024');
+    const dataset = datasetList.datasetlist.filter(item => item.session_title === "2024 Regular Session");
+    const accessKey = dataset[0].access_key;
+    const session_id = dataset[0].session_id;
+    const jsonData = await legiScan.getDataSet(session_id, accessKey);
 
     // Decode base64-encoded dataset.zip content
     const datasetZipBuffer = Buffer.from(jsonData.dataset.zip, 'base64');
@@ -82,32 +119,9 @@ async function pullExtractZip(extractionDir) {
   }
 }
 
-function runSqlAsync(sql, params = null) {
-  if (params) {
-    return new Promise((resolve, reject) => {
-      db.run(sql, params, function (err) {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(this);
-        }
-      });
-    });
-  }
-  return new Promise((resolve, reject) => {
-    db.run(sql, function (err) {
-      if (err) {
-        reject(err);
-      } else {
-        resolve(this);
-      }
-    });
-  });
-}
-
 async function purgeTable(tableName) {
   try {
-    const result = await runSqlAsync(`DELETE FROM ${tableName};`);
+    const result = await runSql(`DELETE FROM ${tableName};`);
     console.log(`Purged ${result.changes} records from ${tableName} table`);
   } catch (err) {
     throw new Error('Failed to purge table', err);
@@ -117,7 +131,7 @@ async function purgeTable(tableName) {
 async function insertRow(tableName, label, json) {
   try {
     const sql = `INSERT INTO ${tableName} (year,label,json) VALUES (?,?,?)`;
-    const result = await runSqlAsync(sql, ['2024', label, json]);
+    const result = await runSql(sql, ['2024', label, json]);
     return result;
     // console.log(`insert result`, result)
   } catch (err) {
@@ -193,10 +207,34 @@ app.get('/refreshData', async (req, res) => {
     await populateTable(extractionDir + "/UT/2024-2024_General_Session/people", 'people');
     await populateTable(extractionDir + "/UT/2024-2024_General_Session/vote", 'votes');
 
-    res.json({ message: 'Data refreshed successfully' });
+    const lastUpdatedDateRecord = await retrieveRow("SELECT value FROM config WHERE name='last_updated_date'");
+    if (lastUpdatedDateRecord) runSql("UPDATE config SET value = datetime('now', 'localtime') WHERE name = 'last_updated_date'");
+    else runSql("INSERT INTO config (name,value) VALUES (?,datetime('now','localtime'))",['last_updated_date']);
+    lastUpdatedDate = lastUpdatedDateRecord.value;
+
+    res.json({ message: lastUpdatedDate });
   } catch (error) {
     console.error('Error fetching data:', error);
-    res.status(500).send({message: 'Failed to fetch data'});
+    res.status(500).json({message: 'Failed to fetch data', error: error.message});
+  }
+});
+
+app.get('/last-updated', async (req,res) => {
+  try {
+    if (lastUpdatedDate) {
+      res.json({message:lastUpdatedDate});
+      return;
+    }
+    const lastUpdatedDateRecord = await retrieveRow("SELECT value FROM config WHERE name='last_updated_date'");
+    if (lastUpdatedDateRecord) {
+      lastUpdatedDate = lastUpdatedDateRecord.value;
+      res.json({message:lastUpdatedDate});
+    } else {
+      res.json({message:'Never'});
+    }
+  } catch (error) {
+    console.error('Error occurred', error);
+    res.status(500).send('Internal server error');
   }
 });
 
