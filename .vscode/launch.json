@@ -2,11 +2,32 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "type": "node-terminal",
+            "request": "launch",
+            "name": "Backend-Layman",
+            "cwd": "${workspaceFolder}/backend",
+            "command": "npm start",
+            "localRoot": "${workspaceFolder/backend}"
+        },
+        {
+            "type": "node-terminal",
+            "request": "launch",
+            "name": "Frontend-Layman",
+            "cwd": "${workspaceFolder}/frontend",
+            "command": "npm start",
+            "localRoot": "${workspaceFolder/frontend}",
+            "serverReadyAction": {
+                "action": "debugWithChrome",
+                "pattern": "webpack compiled successfully",
+                "uriFormat": "http://localhost:3000"
+            }
+        },
+        {
             "type": "chrome",
             "request": "launch",
-            "name": "Layman Frontend",
-            "url": "http://localhost:3000",
-            "webRoot": "${workspaceFolder/frontend}"
+            "name": "Layman Browser",
+            "url": "http://localhost:3000", // URL of your React frontend
+            "webRoot": "${workspaceFolder}/frontend", // Path to your frontend folder
         }
     ]
 }
