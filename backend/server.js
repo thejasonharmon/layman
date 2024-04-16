@@ -240,6 +240,76 @@ async function readDir(folderName) {
       res.status(500).send('Internal server error'); // Send error response.
     }
   });
+
+// Function to retrieve multiple rows from the database using promises.
+function retrieveRows(sql, params = []) {
+  return new Promise((resolve, reject) => {
+    db.all(sql, params, function (err, rows) {
+      if (err) reject(err); // Reject the promise if there is an error
+      else resolve(rows); // Otherwise, resolve the promise with the retrieved rows
+    });
+  });
+}
+
+/**
+ * Handles GET requests to fetch bills by their status name. This endpoint converts a human-readable status name 
+ * into a numeric status code based on a predefined mapping and queries the database for bills matching this status.
+ * It returns the bills with the title, description, and the URL of the PDF from the last text entry sorted by date.
+ * 
+ * @param {Object} req - The request object containing route parameters.
+ * @param {string} req.params.status - The status name of the bills to fetch. Should be one of the following:
+ *                                     'introduced', 'in_discussion', 'submitted', 'passed', 'vetoed', 'failed'.
+ * @param {Object} res - The response object used to send back the HTTP response.
+ * @route GET /getBillsByStatus/:status
+ * @returns {void} Returns nothing. Responses are handled by sending JSON data with the fetched bills or 
+ *                 an error message in case of failure or invalid input.
+ * @throws {400} - If the status name provided does not match any key in the status map, it sends a 400 Bad Request response.
+ * @throws {500} - If there is any error during database query execution or another unexpected issue, it sends a 500 Internal Server Error response.
+ */
+app.get('/getBillsByStatus/:status', async (req, res) => {
+  try {
+    // Map of status names to their corresponding numbers
+    const statusMap = {
+      'introduced': 1,
+      'in_discussion': 2,
+      'submitted': 3,
+      'passed': 4,
+      'vetoed': 5,
+      'failed': 6
+    };
+
+    // Get status name from the URL parameter and convert to corresponding number
+    const statusName = req.params.status.toLowerCase(); // Convert to lower case to ensure case insensitivity
+    const statusCode = statusMap[statusName];
+
+    // Check if the status code exists, if not, send an error response
+    if (!statusCode) {
+      return res.status(400).send({ error: "Invalid status name provided." });
+    }
+
+    // SQL query to select bills based on status code
+    const sqlQuery = `
+      SELECT
+        json_extract(json, '$.bill.title') AS name,
+        json_extract(json, '$.bill.description') AS description,
+        json_extract(
+          json, 
+          '$.bill.texts[' || (json_array_length(json_extract(json, '$.bill.texts')) - 1) || '].state_link'
+        ) AS pdf_url
+      FROM bills
+      WHERE json_extract(json, '$.bill.status') = ?;
+    `;
+
+    // Execute the query using the statusCode
+    const rows = await retrieveRows(sqlQuery, [statusCode]);
+
+    // Send the results as JSON
+    res.json(rows);
+  } catch (error) {
+    console.error("Error fetching bills by status:", error);
+    res.status(500).json({ error: "An error occurred while fetching the data." });
+  }
+});
   
   const PORT = process.env.PORT || 3001; // Define the port on which the server will listen.
   app.listen(PORT, () => {
