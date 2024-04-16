@@ -8,48 +8,42 @@ const fs = require('fs');
 const admZip = require('adm-zip');
 const os = require('os');
 const path = require('path');
+const LegiScan = require('./LegiScan'); // Import the LegiScan module from a local file.
 
+dotenv.config(); // Load environment variables from a .env file.
+const app = express(); // Initialize an Express application.
+app.use(cors()); // Enable CORS for all routes to allow cross-origin requests.
+app.use(express.json()); // Use middleware to parse JSON-formatted request bodies.
+const apiKey = process.env.API_KEY; // Retrieve the API key from environment variables.
+const legiScan = new LegiScan(apiKey); // Create a new instance of LegiScan configured with the API key.
 
-const LegiScan = require('./LegiScan');
-
-dotenv.config();
-const app = express();
-app.use(cors());
-app.use(express.json());
-const apiKey = process.env.API_KEY;
-const legiScan = new LegiScan(apiKey);
-
+// Connect to a SQLite database located at '../layman.db', logging any connection errors.
 const db = new sqlite3.Database('../layman.db', (err) => {
-  if (err) {
-    return console.error(err.message);
-  }
-  console.log('Connected to the SQlite database.');
+  if (err) return console.error(err.message); // Log error if connection fails
+  console.log('Connected to the SQlite database.'); // Confirm successful connection
 });
 
+// Function to execute a SQL command using promises for better async handling.
 function runSql(sql, params = []) {
   return new Promise((resolve, reject) => {
-      db.run(sql, params, function (err) {
-          if (err) {
-              reject(err);
-          } else {
-              resolve(this);
-          }
-      });
+    db.run(sql, params, function (err) {
+      if (err) reject(err); // Reject the promise if there is an error
+      else resolve(this); // Otherwise, resolve the promise with the context
+    });
   });
 }
 
+// Function to retrieve a single row from the database using promises.
 function retrieveRow(sql, params = []) {
   return new Promise((resolve, reject) => {
-      db.get(sql, params, function (err, row) {
-          if (err) {
-              reject(err);
-          } else {
-              resolve(row);
-          }
-      });
+    db.get(sql, params, function (err, row) {
+      if (err) reject(err); // Reject the promise if there is an error
+      else resolve(row); // Otherwise, resolve the promise with the retrieved row
+    });
   });
 }
 
+// Create or ensure the 'bills' table exists with specified schema.
 runSql(`
 CREATE TABLE IF NOT EXISTS bills (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -58,6 +52,7 @@ CREATE TABLE IF NOT EXISTS bills (
   json TEXT
 );`);
 
+// Create or ensure the 'people' table exists with specified schema.
 runSql(`
 CREATE TABLE IF NOT EXISTS people (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -66,6 +61,7 @@ CREATE TABLE IF NOT EXISTS people (
   json TEXT
 );`);
 
+// Create or ensure the 'votes' table exists with specified schema.
 runSql(`
 CREATE TABLE IF NOT EXISTS votes (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -74,6 +70,7 @@ CREATE TABLE IF NOT EXISTS votes (
   json TEXT
 );`);
 
+// Create or ensure the 'config' table exists with specified schema.
 runSql(`
 CREATE TABLE IF NOT EXISTS config (
   name TEXT,
@@ -81,175 +78,170 @@ CREATE TABLE IF NOT EXISTS config (
 )
 `)
 
-let lastUpdatedDate;
+let lastUpdatedDate;  // Variable to hold the last updated date.
 
+// Endpoint to fetch a session list from LegiScan for a specific state.
 app.get('/getSessionList/state/:state', async (req, res) => {
   try {
-    const sessionList = await legiScan.getSessionList(req.params.state);
-    res.status(200).send(sessionList);
+    const sessionList = await legiScan.getSessionList(req.params.state); // Fetch session list using the LegiScan API.
+    res.status(200).send(sessionList); // Send successful response with the session list.
   } catch (error) {
-    console.error('Server.legiScan:err Error fetching data:', error);
-    res.status(500).send('Failed to fetch data');
+    console.error('Server.legiScan:err Error fetching data:', error); // Log error if the fetch fails.
+    res.status(500).send('Failed to fetch data'); // Send error response if the fetch fails.
   }
 });
 
+// Function to extract ZIP file contents to a specified directory.
 async function pullExtractZip(extractionDir) {
   try {
-    const datasetList = await legiScan.getDataSetList('UT','2024');
-    const dataset = datasetList.datasetlist.filter(item => item.session_title === "2024 Regular Session");
-    const accessKey = dataset[0].access_key;
-    const session_id = dataset[0].session_id;
-    const jsonData = await legiScan.getDataSet(session_id, accessKey);
+    const datasetList = await legiScan.getDataSetList('UT','2024'); // Fetch dataset list for Utah 2024.
+    const dataset = datasetList.datasetlist.filter(item => item.session_title === "2024 Regular Session"); // Filter for the 2024 Regular Session.
+    const accessKey = dataset[0].access_key; // Get access key from the dataset.
+    const session_id = dataset[0].session_id; // Get session ID from the dataset.
+    const jsonData = await legiScan.getDataSet(session_id, accessKey); // Fetch the dataset using session ID and access key.
 
-    // Decode base64-encoded dataset.zip content
-    const datasetZipBuffer = Buffer.from(jsonData.dataset.zip, 'base64');
-
-    // Create a directory to extract the zip contents (optional)
-    // const extractionDir = os.tmpdir() + "/extracted";
-    console.log(`Writing files to ${extractionDir}`)
+    const datasetZipBuffer = Buffer.from(jsonData.dataset.zip, 'base64'); // Decode base64-encoded ZIP file content.
+    console.log(`Writing files to ${extractionDir}`) // Log the directory where files will be written.
     if (!fs.existsSync(extractionDir)) {
-      fs.mkdirSync(extractionDir);
+      fs.mkdirSync(extractionDir); // Create the directory if it does not exist.
     }
 
-    // Use adm-zip to extract the zip file content
-    const zip = new admZip(datasetZipBuffer);
-    zip.extractAllTo(extractionDir, /*overwrite*/ true);
+    const zip = new admZip(datasetZipBuffer); // Create a ZIP object for extraction.
+    zip.extractAllTo(extractionDir, /*overwrite*/ true); // Extract all contents to the directory, overwriting existing files.
   } catch (err) {
-    throw new Error("pullZip: error ", err);
+    throw new Error("pullZip: error ", err); // Throw error if extraction fails.
   }
 }
 
+// Function to delete all records from a specified table.
 async function purgeTable(tableName) {
   try {
-    const result = await runSql(`DELETE FROM ${tableName};`);
-    console.log(`Purged ${result.changes} records from ${tableName} table`);
+    const result = await runSql(`DELETE FROM ${tableName};`); // Execute SQL command to delete all records.
+    console.log(`Purged ${result.changes} records from ${tableName} table`); // Log the number of records deleted.
   } catch (err) {
-    throw new Error('Failed to purge table', err);
+    throw new Error('Failed to purge table', err); // Throw error if purging fails.
   }
 }
 
+// Function to insert a row into a specified table.
 async function insertRow(tableName, label, json) {
   try {
-    const sql = `INSERT INTO ${tableName} (year,label,json) VALUES (?,?,?)`;
-    const result = await runSql(sql, ['2024', label, json]);
-    return result;
-    // console.log(`insert result`, result)
+    const sql = `INSERT INTO ${tableName} (year,label,json) VALUES (?,?,?)`; // SQL command to insert a row.
+    const result = await runSql(sql, ['2024', label, json]); // Execute SQL command with values.
+    return result; // Return the result object.
   } catch (err) {
-    throw new Error('Failed to insert row', err);
+    throw new Error('Failed to insert row', err); // Throw error if insertion fails.
   }
 }
 
+// Asynchronous function to read directory contents and return a promise of file names.
 async function readDir(folderName) {
-  return new Promise((resolve, reject) => {
-    fs.readdir(folderName, (err, files) => {
-      if (err) {
-        reject(err);
-      } else {
-        resolve(files);
-      }
+    return new Promise((resolve, reject) => {
+      fs.readdir(folderName, (err, files) => {
+        if (err) reject(err); // If an error occurs, reject the promise.
+        else resolve(files); // Otherwise, resolve the promise with the list of files.
+      });
     });
+  }
+  
+  // Asynchronous function to read a file and return its content.
+  async function readFile(filePath) {
+    try {
+      const data = await fs.promises.readFile(filePath, { encoding: 'utf8' }); // Read file asynchronously with UTF-8 encoding.
+      return data;
+    } catch (err) {
+      throw err; // If an error occurs, throw the error.
+    }
+  }
+  
+  // Asynchronous function to process files and insert data into a specified database table.
+  async function insertRows(folderName, filesList, tableName) {
+    try {
+      let rowCount = 0; // Initialize counter for rows inserted.
+      for (let file of filesList) { // Iterate over each file in the provided list.
+        const filePath = path.join(folderName, file); // Generate full path for the file.
+        const data = await readFile(filePath); // Read the content of the file.
+  
+        const label = file.substring(0, file.indexOf('.')); // Extract label from file name (before the first dot).
+        const result = await insertRow(tableName, label, data); // Insert data into the table.
+        if (result.changes > 0) rowCount++; // Increment counter if rows were added.
+      }
+      console.log(`Inserted ${rowCount} rows into the ${tableName}`); // Log the number of rows inserted.
+      return rowCount;
+    } catch (err) {
+      console.error('Error inserting records:', err); // Log error if insertion fails.
+      throw err; // Propagate error to caller.
+    }
+  }
+  
+  // Asynchronous function to refresh and populate a specified table from a directory.
+  async function populateTable(folderName, tableName) {
+    try {
+      await purgeTable(tableName); // Delete all records from the table.
+  
+      const files = await readDir(folderName); // Read all files from the specified folder.
+      const rows = await insertRows(folderName, files, tableName); // Insert all read files into the database table.
+    } catch (err) {
+      debugger; // Debugger statement for error handling.
+      throw new Error('populateTable:err ', err); // Throw error with custom message.
+    }
+  }
+  
+  // Endpoint to refresh data by pulling new data and updating database tables.
+  app.get('/refreshData', async (req, res) => {
+    try {
+      const extractionDir = "../extracted"; // Define directory for extracted data.
+      await pullExtractZip(extractionDir); // Extract new data.
+  
+      // Populate database tables with new data.
+      await populateTable(extractionDir + "/UT/2024-2024_General_Session/bill", 'bills');
+      await populateTable(extractionDir + "/UT/2024-2024_General_Session/people", 'people');
+      await populateTable(extractionDir + "/UT/2024-2024_General_Session/vote", 'votes');
+  
+      // Update 'last_updated_date' in config table or insert if not exists.
+      const lastUpdatedDateRecord = await retrieveRow("SELECT value FROM config WHERE name='last_updated_date'");
+      if (lastUpdatedDateRecord) runSql("UPDATE config SET value = datetime('now', 'localtime') WHERE name = 'last_updated_date'");
+      else runSql("INSERT INTO config (name,value) VALUES (?,datetime('now','localtime'))",['last_updated_date']);
+      lastUpdatedDate = lastUpdatedDateRecord.value; // Update last updated date variable.
+  
+      res.json({ message: lastUpdatedDate }); // Send updated date as response.
+    } catch (error) {
+      console.error('Error fetching data:', error); // Log fetching error.
+      res.status(500).json({message: 'Failed to fetch data', error: error.message}); // Send error response.
+    }
   });
-}
-
-async function readFile(filePath) {
-  try {
-    // Read file asynchronously
-    const data = await fs.promises.readFile(filePath, { encoding: 'utf8' });
-    return data;
-  } catch (err) {
-    // An error occurred while reading the file, throw the error
-    throw err;
-  }
-}
-
-async function insertRows(folderName, filesList, tableName) {
-  try {
-    // Iterate over each file in the list
-    let rowCount = 0;
-    for (let file of filesList) {
-      const filePath = path.join(folderName, file);
-      const data = await readFile(filePath);
-
-      // Process data and insert row
-      const label = file.substring(0, file.indexOf('.'));
-      //const json = JSON.parse(data);
-      const result = await insertRow(tableName, label, data);
-      if (result.changes>0) rowCount++;
+  
+  // Endpoint to get the last date the data was updated.
+  app.get('/last-updated', async (req, res) => {
+    try {
+      if (lastUpdatedDate) {
+        res.json({message: lastUpdatedDate}); // Send last updated date if available.
+        return;
+      }
+      const lastUpdatedDateRecord = await retrieveRow("SELECT value FROM config WHERE name='last_updated_date'");
+      if (lastUpdatedDateRecord) {
+        lastUpdatedDate = lastUpdatedDateRecord.value; // Update variable with last updated date from database.
+        res.json({message: lastUpdatedDate}); // Send last updated date as response.
+      } else {
+        res.json({message:'Never'}); // Send 'Never' if no date is found.
+      }
+    } catch (error) {
+      console.error('Error occurred', error); // Log error.
+      res.status(500).send('Internal server error'); // Send error response.
     }
-    console.log(`Inserted ${rowCount} rows into the ${tableName}`);
-    return rowCount;
-  } catch (err) {
-    console.error('Error inserting records:', err);
-    throw err; // Propagate error to caller
-  }
-}
-
-async function populateTable(folderName, tableName) {
-  try {
-
-    await purgeTable(tableName);
-
-    const files = await readDir(folderName);
-    const rows = await insertRows(folderName, files, tableName);
-  } catch (err) {
-    debugger;
-    throw new Error('populatTable:err ', err);
-  }
-}
-
-app.get('/refreshData', async (req, res) => {
-  try {
-
-    const extractionDir = "../extracted";
-    await pullExtractZip(extractionDir);
-
-    await populateTable(extractionDir + "/UT/2024-2024_General_Session/bill", 'bills');
-    await populateTable(extractionDir + "/UT/2024-2024_General_Session/people", 'people');
-    await populateTable(extractionDir + "/UT/2024-2024_General_Session/vote", 'votes');
-
-    const lastUpdatedDateRecord = await retrieveRow("SELECT value FROM config WHERE name='last_updated_date'");
-    if (lastUpdatedDateRecord) runSql("UPDATE config SET value = datetime('now', 'localtime') WHERE name = 'last_updated_date'");
-    else runSql("INSERT INTO config (name,value) VALUES (?,datetime('now','localtime'))",['last_updated_date']);
-    lastUpdatedDate = lastUpdatedDateRecord.value;
-
-    res.json({ message: lastUpdatedDate });
-  } catch (error) {
-    console.error('Error fetching data:', error);
-    res.status(500).json({message: 'Failed to fetch data', error: error.message});
-  }
-});
-
-app.get('/last-updated', async (req,res) => {
-  try {
-    if (lastUpdatedDate) {
-      res.json({message:lastUpdatedDate});
-      return;
+  });
+  
+  // Endpoint to handle a POST request to extract data from a zip file provided in the request.
+  app.post('/extract-zip', async (req, res) => {
+    try {
+      const { dataset } = req.body; // Extract dataset from request body.
+    } catch (error) {
+      console.error('Error occurred', error); // Log error.
+      res.status(500).send('Internal server error'); // Send error response.
     }
-    const lastUpdatedDateRecord = await retrieveRow("SELECT value FROM config WHERE name='last_updated_date'");
-    if (lastUpdatedDateRecord) {
-      lastUpdatedDate = lastUpdatedDateRecord.value;
-      res.json({message:lastUpdatedDate});
-    } else {
-      res.json({message:'Never'});
-    }
-  } catch (error) {
-    console.error('Error occurred', error);
-    res.status(500).send('Internal server error');
-  }
-});
-
-app.post('/extract-zip', async (req, res) => {
-  try {
-    const { dataset } = req.body;
-
-
-  } catch (error) {
-    console.error('Error occurred', error);
-    res.status(500).send('Internal server error');
-  }
-});
-
-const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
-});
+  });
+  
+  const PORT = process.env.PORT || 3001; // Define the port on which the server will listen.
+  app.listen(PORT, () => {
+    console.log(`Server is running on port ${PORT}`); // Log the port on which the server is running.
+  });  
