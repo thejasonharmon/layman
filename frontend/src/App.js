@@ -23,10 +23,10 @@ function App() {
           })
           .catch(error => {
             setBottomBarText('(2)Error')
-            setData(error.message);
+            setDetailedStatus(error.message);
           });
       } catch (error) {
-        setData(error.message);
+        setDetailedStatus(error.message);
       }
     }
     getLastUpdated();
@@ -36,9 +36,9 @@ function App() {
     return <MuiAlert elevation={6} variant="filled"  {...props} />;
   }
 
-  const [data, setData] = useState({ 'message': 'nothing to show' });
+  const [detailedStatus, setDetailedStatus] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
+  const [errorJson, setErrorJson] = useState(null);
   const [value, setValue] = useState(0);
 
   const [open, setOpen] = useState(false);
@@ -50,8 +50,8 @@ function App() {
 
   const refreshData = async () => {
     setLoading(true);
-    setData(null);
-    setError(null);
+    setDetailedStatus(null);
+    setErrorJson(null);
     setAlertMessage('Loading data...');
     setSeverity("info");
     setOpen(true);
@@ -62,22 +62,22 @@ function App() {
           setSeverity("success");
           setAlertMessage("Data loaded successfully!")
           setBottomBarText('Last data refresh: ' + lastUpdateDate.current);
-          setData('Data was successfully pulled from the LegiScan API ' + lastUpdateDate.current);
-          setError(null);
+          setDetailedStatus('Data was successfully pulled from the LegiScan API ' + lastUpdateDate.current);
+          setErrorJson(null);
         })
         .catch(error => {
-          const errorMessage = error.response.data.message + ' ' + error.response.data.error;
-          setError({ error: errorMessage });
-          setData(null);
+          // const errorMessage = error.response.data;
+          setErrorJson(error.response.data);
+          setDetailedStatus(null);
           setSeverity("error");
           setAlertMessage('Data failed to load ');
-          setBottomBarText(`Failed to load data. Expand for more details`);
-        }).finally( () => {
+          setBottomBarText(`Failed to refresh data. Expand for details`);
+        }).finally(() => {
           setLoading(false);
         });
     } catch (error) {
-      setError({error:error.message});
-      setData(null);
+      setErrorJson({ error: error.message });
+      setDetailedStatus(null);
     }
   };
 
@@ -89,6 +89,17 @@ function App() {
   const handleChange = (event, newValue) => {
     setValue(newValue);
   };
+
+  const testError = () => {
+    if (!errorJson) {
+      setDetailedStatus(null);
+      setErrorJson({ message: 'This is a test error message from testError', error: 'The error details would go here' });
+      setBottomBarText('Error. Expand for details');
+    } else {
+      setErrorJson(null);
+      setBottomBarText('Last data refresh: ' + lastUpdateDate.current)
+    }
+  }
 
   const darkTheme = createTheme({
     palette: {
@@ -125,6 +136,8 @@ function App() {
             </Button>
           </Toolbar>
         </AppBar>
+        <br></br>
+        <Button variant='contained' onClick={testError}>{errorJson ? 'Clear Error' : 'Test Error'}</Button>
         <Snackbar anchorOrigin={{ horizontal: 'center', vertical: 'bottom' }} open={open} autoHideDuration={6000} onClose={handleClose}>
           <div>
             <Alert onClose={handleClose} severity={severity}>
@@ -145,13 +158,14 @@ function App() {
           <Typography variant='caption'>{bottomBarText}</Typography>
         </AccordionSummary>
         <AccordionDetails>
-          <Typography variant='caption'>
-            {error ? (
-              <pre style={{ fontColor: "red" }}>{JSON.stringify(error, null, 2)}</pre>
-            ) : ''}
-            {data ? (
-              <pre>{JSON.stringify(data, null, 2)}</pre>
-            ) : ''}
+          <Typography variant='caption' display={errorJson ? "block" : "none"}>
+            💩 Error details:
+          </Typography>
+          <Typography variant="caption" component="pre" sx={{ color: "red" }} display={errorJson ? "block" : "none"}>
+            {errorJson ? JSON.stringify(errorJson, null, 2) : ''}
+          </Typography>
+          <Typography variant='caption' display={(errorJson === null || errorJson === '') ? "block" : "none"}>
+            {detailedStatus ? { detailedStatus } : 'No status details 👍'}
           </Typography>
         </AccordionDetails>
       </Accordion>
