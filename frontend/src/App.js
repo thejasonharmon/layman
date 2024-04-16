@@ -23,10 +23,10 @@ function App() {
           })
           .catch(error => {
             setBottomBarText('(2)Error')
-            setDetailedStatus(error.message);
+            setErrorJson(error.message);
           });
       } catch (error) {
-        setDetailedStatus(error.message);
+        setErrorJson(error.message);
       }
     }
     getLastUpdated();
@@ -165,7 +165,7 @@ function App() {
             {errorJson ? JSON.stringify(errorJson, null, 2) : ''}
           </Typography>
           <Typography variant='caption' display={(errorJson === null || errorJson === '') ? "block" : "none"}>
-            {detailedStatus ? { detailedStatus } : 'No status details 👍'}
+            {detailedStatus ? detailedStatus : 'No status details 👍'}
           </Typography>
         </AccordionDetails>
       </Accordion>
