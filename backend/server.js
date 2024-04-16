@@ -291,7 +291,6 @@ app.get('/getBillsByStatus/:status', async (req, res) => {
     const sqlQuery = `
       SELECT
         json_extract(json, '$.bill.title') AS name,
-        json_extract(json, '$.bill.description') AS description,
         json_extract(
           json, 
           '$.bill.texts[' || (json_array_length(json_extract(json, '$.bill.texts')) - 1) || '].state_link'
