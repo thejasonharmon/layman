@@ -22,7 +22,7 @@ import CircularProgress from '@mui/material/CircularProgress';
 import axios from 'axios';
 
 
-function InDiscussionPage() {
+function LegislationPage({ statusType }) {
 
   const [selectedOptions, setSelectedOptions] = useState([]);
   const [searchResults, setSearchResults] = useState([]);
@@ -44,7 +44,7 @@ function InDiscussionPage() {
   
     try {
       // Replace 'your-api-endpoint' with the actual endpoint you want to hit.
-      const response = await axios.get('http://localhost:3001/getBillsByStatus/in_discussion', {
+      const response = await axios.get(`http://localhost:3001/getBillsByStatus/${statusType}`, {
         params: {
           // Include any parameters your API might need for the search.
           options: selectedOptions.join(','),
@@ -83,7 +83,7 @@ function InDiscussionPage() {
                 fontSize: '2rem'
               }}
             >
-              Search Introduced Legislation
+              {`Search ${statusType.charAt(0).toUpperCase() + statusType.slice(1).replace('_', ' ')} Legislation`}
             </Typography>
             <Box sx={{ display: 'flex', justifyContent: 'center', gap: 2, marginTop: 4, alignItems: 'center' }}>
               <FormControl sx={{ width: 300 }}>
@@ -176,4 +176,4 @@ function InDiscussionPage() {
     );
   }
 
-export default InDiscussionPage;
+export default LegislationPage;
