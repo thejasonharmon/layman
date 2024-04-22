@@ -26,8 +26,8 @@
             "type": "chrome",
             "request": "launch",
             "name": "Layman Browser",
-            "url": "http://localhost:3000", // URL of your React frontend
-            "webRoot": "${workspaceFolder}/frontend", // Path to your frontend folder
+            "url": "http://localhost:3000",
+            "webRoot": "${workspaceFolder}/frontend",
         }
     ]
 }

@@ -22,7 +22,7 @@ import CircularProgress from '@mui/material/CircularProgress';
 import axios from 'axios';
 
 
-function InDiscussionPage() {
+function LegislationPage({ statusType }) {
 
   const [selectedOptions, setSelectedOptions] = useState([]);
   const [searchResults, setSearchResults] = useState([]);
@@ -44,7 +44,7 @@ function InDiscussionPage() {
   
     try {
       // Replace 'your-api-endpoint' with the actual endpoint you want to hit.
-      const response = await axios.get('http://localhost:3001/getBillsByStatus/in_discussion', {
+      const response = await axios.get(`http://localhost:3001/getBillsByStatus/${statusType}`, {
         params: {
           // Include any parameters your API might need for the search.
           options: selectedOptions.join(','),
@@ -83,7 +83,7 @@ function InDiscussionPage() {
                 fontSize: '2rem'
               }}
             >
-              Search Introduced Legislation
+              {`Search ${statusType.charAt(0).toUpperCase() + statusType.slice(1).replace('_', ' ')} Legislation`}
             </Typography>
             <Box sx={{ display: 'flex', justifyContent: 'center', gap: 2, marginTop: 4, alignItems: 'center' }}>
               <FormControl sx={{ width: 300 }}>
@@ -156,24 +156,9 @@ function InDiscussionPage() {
             </Container>
           </Container>
         </Container>
-        <Container maxWidth="false" component="footer" sx={{ bgcolor: '#333333', padding: '20px 0', marginTop: 'auto' }}>
-          <Box sx={{ textAlign: 'center' }}>
-            <Typography variant="body1" color="text.primary" sx={{ color: 'white' }}>
-              Quick Links:
-            </Typography>
-            <Box component="ul" sx={{ listStyle: 'none', padding: 0, margin: '10px 0', display: 'flex', justifyContent: 'center', gap: 2 }}>
-              <li><Link href="/" color="inherit" sx={{ textDecoration: 'none', color:'#979797' }}>Homepage</Link></li>
-              <li><Link href="/contact" color="inherit" sx={{ textDecoration: 'none', color:'#979797' }}>Contact Us</Link></li>
-              <li><Link href="/privacy" color="inherit" sx={{ textDecoration: 'none', color:'#979797' }}>Privacy Policy</Link></li>
-              <li><Link href="/terms" color="inherit" sx={{ textDecoration: 'none', color:'#979797' }}>Terms of Use</Link></li>
-            </Box>
-            <Typography variant="body2" color="#979797">
-              &copy; {new Date().getFullYear()} Layman. All rights reserved.
-            </Typography>
-          </Box>
-        </Container>
+
       </>
     );
   }
 
-export default InDiscussionPage;
+export default LegislationPage;
