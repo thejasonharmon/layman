@@ -1,9 +1,21 @@
-import React from 'react';
-import { AppBar, Toolbar, Typography, Tabs, Tab, Box } from '@mui/material';
+import React, { useState } from 'react';
+import { 
+  AppBar, 
+  Toolbar, 
+  Typography, 
+  Tabs, 
+  Tab, 
+  CircularProgess,
+  Snackbar,
+  Alert,
+  Box } from '@mui/material';
 import { Link, useLocation } from 'react-router-dom';
+import axios from 'axios';
 
 function AppBarComponent() {
   const location = useLocation();
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
 
   const tabStyle = {
     color: 'white',
@@ -39,10 +51,21 @@ function AppBarComponent() {
         return 4;
       case '/vetoed':
         return 5;
-      case '/search':
-        return 6;
       default:
         return false;
+    }
+  };
+
+  const refreshAllData = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      await axios.get('http://localhost:3001/refreshData');
+    } catch (error) {
+      console.error('Error occurred', error);
+      setError(error);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -61,7 +84,7 @@ function AppBarComponent() {
             <Tab label="Failed" component={Link} to="/failed" sx={tabStyle}/>
             <Tab label="Vetoed" component={Link} to="/vetoed" sx={tabStyle}/>
           </Tabs>
-          <Tab label="Search" />
+          <Tab label="Refresh All Data" onClick={refreshAllData} />
         </Toolbar>
       </AppBar>
     </Box>
