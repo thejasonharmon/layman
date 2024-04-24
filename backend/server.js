@@ -92,6 +92,7 @@ async function insertRow(tableName, label, json) {
     const result = await runSql(sql, ['2024', label, json]); // Execute SQL command with values.
     return result; // Return the result object.
   } catch (err) {
+    debugger;
     throw new Error('Failed to insert row', err); // Throw error if insertion fails.
   }
 }
@@ -102,6 +103,7 @@ async function purgeTable(tableName) {
     const result = await runSql(`DELETE FROM ${tableName};`); // Execute SQL command to delete all records.
     console.log(`Purged ${result.changes} records from ${tableName} table`); // Log the number of records deleted.
   } catch (err) {
+    debugger;
     throw new Error('Failed to purge table', err); // Throw error if purging fails.
   }
 }
@@ -128,6 +130,7 @@ async function pullExtractZip(extractionDir) {
     const zip = new admZip(datasetZipBuffer); // Create a ZIP object for extraction.
     zip.extractAllTo(extractionDir, /*overwrite*/ true); // Extract all contents to the directory, overwriting existing files.
   } catch (err) {
+    debugger;
     throw new Error("pullZip: error ", err); // Throw error if extraction fails.
   }
 }
@@ -152,6 +155,7 @@ async function readFile(filePath) {
     const data = await fs.promises.readFile(filePath, { encoding: 'utf8' }); // Read file asynchronously with UTF-8 encoding.
     return data;
   } catch (err) {
+    debugger;
     throw err; // If an error occurs, throw the error.
   }
 }
@@ -171,6 +175,7 @@ async function insertRows(folderName, filesList, tableName) {
     console.log(`Inserted ${rowCount} rows into the ${tableName}`); // Log the number of rows inserted.
     return rowCount;
   } catch (err) {
+    debugger;
     console.error('Error inserting records:', err); // Log error if insertion fails.
     throw err; // Propagate error to caller.
   }
@@ -204,11 +209,21 @@ app.get('/refreshData', async (req, res) => {
     await populateTable(extractionDir + "/UT/2024-2024_General_Session/people", 'people');
     await populateTable(extractionDir + "/UT/2024-2024_General_Session/vote", 'votes');
 
-    // Update 'last_updated_date' in config table or insert if not exists.
-    const lastUpdatedDateRecord = await retrieveRow("SELECT value FROM config WHERE name='last_updated_date'");
-    if (lastUpdatedDateRecord) runSql("UPDATE config SET value = datetime('now', 'localtime') WHERE name = 'last_updated_date'");
-    else runSql("INSERT INTO config (name,value) VALUES (?,datetime('now','localtime'))",['last_updated_date']);
-    lastUpdatedDate = lastUpdatedDateRecord.value; // Update last updated date variable.
+// See if last_updated_date in the config table already exists
+let lastUpdatedDateRecord = await retrieveRow("SELECT value FROM config WHERE name='last_updated_date'");
+
+// If it does, update the existing record.
+if (lastUpdatedDateRecord) { 
+  await runSql("UPDATE config SET value = datetime('now', 'localtime') WHERE name = 'last_updated_date'");
+} 
+// If not, insert a new record and assign it to the lastUpdatedDateRecord.
+else { 
+  await runSql("INSERT INTO config (name, value) VALUES ('last_updated_date', datetime('now', 'localtime'))");
+  lastUpdatedDateRecord = await retrieveRow("SELECT value FROM config WHERE name='last_updated_date'");
+}
+
+// Update lastUpdatedDate variable with the current value from the database.
+const lastUpdatedDate = lastUpdatedDateRecord.value;
 
     res.json({ message: lastUpdatedDate }); // Send updated date as response.
   } catch (error) {
@@ -309,14 +324,14 @@ app.get('/getBillsByStatus/:status', async (req, res) => {
 // });
 
 // Endpoint to handle a POST request to extract data from a zip file provided in the request.
-// app.post('/extract-zip', async (req, res) => {
-//   try {
-//     const { dataset } = req.body; // Extract dataset from request body.
-//   } catch (error) {
-//     console.error('Error occurred', error); // Log error.
-//     res.status(500).send('Internal server error'); // Send error response.
-//   }
-// });
+app.post('/extract-zip', async (req, res) => {
+  try {
+    const { dataset } = req.body; // Extract dataset from request body.
+  } catch (error) {
+    console.error('Error occurred', error); // Log error.
+    res.status(500).send('Internal server error'); // Send error response.
+  }
+});
 
 //---------------------------------------------------------//
 //-----------------------SET UP PORT-----------------------// *Don't move this section. Must be at the end.
