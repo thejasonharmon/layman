@@ -13,7 +13,7 @@ dotenv.config(); // Load environment variables from a .env file.
 const app = express(); // Initialize an Express application.
 app.use(cors()); // Enable CORS for all routes to allow cross-origin requests.
 app.use(express.json()); // Use middleware to parse JSON-formatted request bodies.
-const apiKey = process.env.API_KEY; // Retrieve the API key from environment variables.
+const apiKey = process.env.LEGISCAN_API_KEY; // Retrieve the API key from environment variables.
 const legiScan = new LegiScan(apiKey); // Create a new instance of LegiScan configured with the API key.
 let lastUpdatedDate;  // Variable to hold the last updated date.
 
