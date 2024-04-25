@@ -13,11 +13,13 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import Backdrop from '@mui/material/Backdrop';
 import CircularProgress from '@mui/material/CircularProgress';
 import axios from 'axios';
+import Button from '@mui/material/Button'; // Import Button from Material UI
 
 function LegislationPage({ statusType }) {
   const [bills, setBills] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [summary, setSummary] = useState({});
 
   useEffect(() => {
     const fetchData = async () => {
@@ -39,6 +41,20 @@ function LegislationPage({ statusType }) {
     fetchData();
   }, [statusType]); // Dependency array only includes statusType
 
+  const handleSummarize = async (pdf_url, index) => {
+    setLoading(true);
+    try {
+      const response = await axios.post('http://localhost:5000/upload', { pdf_url }, {
+        headers: { 'Content-Type': 'application/json' }
+      });
+      setSummary(prev => ({ ...prev, [index]: response.data.summary }));
+    } catch (error) {
+      console.error('Error fetching summary:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <>
       <CssBaseline />
@@ -58,6 +74,10 @@ function LegislationPage({ statusType }) {
                     <Link href={bill.pdf_url} target="_blank" rel="noopener noreferrer">
                       View Full Text
                     </Link>
+                    <Button onClick={() => handleSummarize(bill.pdf_url, index)} variant="contained" color="primary" sx={{ ml: 2 }}>
+                      Summarize
+                    </Button>
+                    {summary[index] && <Typography paragraph sx={{ mt: 2 }}>{summary[index]}</Typography>}
                   </AccordionDetails>
                 </Accordion>
               ))
